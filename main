@@ -1,0 +1,238 @@
+//
+//  main.c
+// 
+//
+//  Created by Ryan Dontas on 5/4/14.
+//  Copyright (c) 2014 Ryan Dontas. All rights reserved.
+//
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+#include <signal.h>
+#include <sys/types.h>
+
+pthread_mutex_t lock;   
+pthread_cond_t self;    
+
+void car();
+void passenger(int id);
+void carride();
+void cancarthreadcontinue();
+void cancarthreadcontinue2();
+void canpassthreadcontinue(int id);
+void canpassthreadcontinue2(int id);
+
+int capacity;
+int totalpassengers;
+
+int takeride = 0;
+int limit = 0;
+int passengersleft;
+int limitgoingdown = 0;
+
+int main(int argc, const char * argv[]) {
+    int i = 1;
+    
+    if(argc != 3) {
+        printf("Error! \n");
+        puts("usage:  give capacity of car || and then number of passengers \n");
+        exit(0);
+    }
+    capacity = atoi(argv[1]);
+    totalpassengers = atoi(argv[2]);
+    printf("capacity is: %d \n", capacity);
+    printf("total passengers: %d \n", totalpassengers);
+    passengersleft = totalpassengers;
+    
+    if (capacity > totalpassengers){
+        puts("Error: total passengers must be greater than capacity of car \n");
+        exit(0);
+    }
+    
+    pthread_t passengerthread[totalpassengers];
+    pthread_t carthread;
+    
+    pthread_mutex_init(&lock, NULL);
+    
+    pthread_cond_init(&self, NULL); //for monitor
+    
+    if (pthread_create(&carthread, NULL, (void *)car, NULL) != 0){
+        perror("pthread_create");
+        exit(1);
+    }
+    
+    for (i=1; i < totalpassengers+1; i++) {
+        if (pthread_create(&passengerthread[i], NULL, (void *)passenger, i) != 0){
+            perror("pthread_create");
+            exit(1);
+        }
+    }
+    
+    i=1;
+    
+    for (i=1; i < totalpassengers+1; i++) {
+        pthread_join(passengerthread[i], NULL);
+    }
+    
+    pthread_join(car, NULL);
+    
+    printf("Program Finished \n");
+    
+    
+    return 0;
+
+}
+
+void car() {
+    
+    
+    while (passengersleft - capacity > 0) {
+        
+        cancarthreadcontinue();                 //  wait for passengers to get in car
+        
+        takeride = 1;
+        printf("car is about to go! \n");
+        carride();                              //  take ride
+        printf("car ride is over \n");
+        takeride = 0; //takeride = 2;
+        limitgoingdown = 1;
+        
+        pthread_mutex_unlock(&lock);
+        pthread_cond_broadcast(&self);          //  give passengers a chance to leave car
+        sleep(1);
+        
+        
+    }
+    
+    capacity = passengersleft;
+    cancarthreadcontinue();
+    takeride = 1;
+    printf("car is about to go on final ride! \n");
+    carride();
+    printf("car's last ride is over \n");
+    takeride = 0; //takeride = 2;
+    limitgoingdown = 1;
+    
+    pthread_mutex_unlock(&lock);
+    pthread_cond_broadcast(&self);
+    sleep(1);
+    
+    cancarthreadcontinue2();
+    
+    takeride = 0;
+    
+    pthread_mutex_unlock(&lock);
+    pthread_cond_broadcast(&self);
+    printf("car just exited \n");
+    pthread_exit(NULL);
+    
+    
+}
+
+
+void passenger(int id) {
+    int incar = 0;
+    
+    canpassthreadcontinue(id);
+    printf("passenger %d can get in car! \n", id);
+    
+    incar = 1;
+    limit++;
+    
+    pthread_mutex_unlock(&lock);
+    pthread_cond_broadcast(&self);
+    sleep(1);
+    
+    canpassthreadcontinue2(id);
+    
+    printf("passenger %d can leave car! \n", id);
+    limit--;
+    if (limit == 0){
+        limitgoingdown = 0;
+    }
+    printf("passenger %d will exit now \n", id);
+    passengersleft--;
+    
+    pthread_mutex_unlock(&lock);
+    pthread_cond_broadcast(&self);
+    
+    pthread_exit(NULL);
+    
+}
+
+
+void canpassthreadcontinue(int id) {
+    pthread_mutex_lock(&lock);
+    
+    while (takeride != 0 || limit == capacity || limitgoingdown == 1) {
+        printf("passenger %d cannot get in car, must wait \n", id);       //diff printouts for diff reasons?
+        
+        pthread_cond_wait(&self, &lock);
+        //sleep(1);
+    }
+    
+    return;
+    
+}
+
+
+void canpassthreadcontinue2(int id) {
+    pthread_mutex_lock(&lock);
+    
+    while (takeride != 0 || limitgoingdown == 0) {
+        printf("passenger %d must wait and cant get out of car \n", id);
+        
+        pthread_cond_wait(&self, &lock);
+        sleep(1);
+    }
+    
+    return;
+}
+
+
+
+
+void cancarthreadcontinue() {
+    pthread_mutex_lock(&lock);
+    
+    while (limit != capacity) {
+        
+        printf("car is not full, must wait \n");
+        
+        pthread_cond_wait(&self, &lock);
+        sleep(1);
+    
+    }
+    
+    printf("car is full, let's go! \n");
+    
+    return;
+
+}
+
+void cancarthreadcontinue2() {
+    pthread_mutex_lock(&lock);
+    
+    while (limit != 0) {
+        
+        printf("car is not empty, must wait \n");
+        
+        pthread_cond_wait(&self, &lock);
+        sleep(1);
+        
+    }
+    
+    printf("car is empty! \n");
+    
+    return;
+
+
+}
+
+
+
+void carride(){
+    sleep(3);
+    return;
+}
